@@ -5,18 +5,35 @@ import schedule
 import time
 import threading
 from flask_socketio import SocketIO
+import os
 
 app = Flask(__name__)
 socketio = SocketIO(app)
 
 db_file = "notifications.db"
+recipients_file = "recipients.txt"
+credentials_file = "email_credentials.txt"
+
+# Load email credentials from a local file
+if os.path.exists(credentials_file):
+    with open(credentials_file, "r") as f:
+        email_user, email_password = f.read().strip().split("\n")
+else:
+    email_user = "your-email@gmail.com"
+    email_password = "your-app-password"
+
+# Load recipients from a local file
+def load_recipients():
+    if os.path.exists(recipients_file):
+        with open(recipients_file, "r") as f:
+            return [line.strip() for line in f.readlines() if line.strip()]
+    return []
 
 def init_db():
     with sqlite3.connect(db_file) as conn:
         cursor = conn.cursor()
         cursor.execute('''CREATE TABLE IF NOT EXISTS notifications (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            recipient TEXT,
                             method TEXT,
                             message TEXT,
                             time TEXT)''')
@@ -24,14 +41,15 @@ def init_db():
 
 init_db()
 
-def send_email(recipient, message):
+def send_email(recipients, message):
     try:
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
-        server.login('your-email@gmail.com', 'your-app-password')
-        server.sendmail('your-email@gmail.com', recipient, message)
+        server.login(email_user, email_password)
+        for recipient in recipients:
+            server.sendmail(email_user, recipient, message)
+            print(f"Email sent to {recipient}")
         server.quit()
-        print(f"Email sent to {recipient}")
     except Exception as e:
         print(f"Failed to send email: {e}")
 
@@ -41,17 +59,19 @@ def send_notification(message):
 
 def check_notifications():
     while True:
+        current_time = time.strftime("%H:%M")
         with sqlite3.connect(db_file) as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT recipient, method, message, time FROM notifications")
+            cursor.execute("SELECT method, message, time FROM notifications")
             notifications = cursor.fetchall()
-            for recipient, method, message, notif_time in notifications:
-                if notif_time == time.strftime("%H:%M"):
-                    if method == "email":
-                        send_email(recipient, message)
+            for method, message, notif_time in notifications:
+                if notif_time == current_time:
+                    recipients = load_recipients()
+                    if method == "email" and recipients:
+                        send_email(recipients, message)
                     elif method == "notification":
                         send_notification(message)
-                    print(f"Sent {method} notification to {recipient}")
+                    print(f"Sent {method} notification")
         time.sleep(60)  # Check every minute
 
 @app.route('/')
@@ -63,8 +83,8 @@ def add_notification():
     data = request.json
     with sqlite3.connect(db_file) as conn:
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO notifications (recipient, method, message, time) VALUES (?, ?, ?, ?)",
-                       (data['recipient'], data['method'], data['message'], data['time']))
+        cursor.execute("INSERT INTO notifications (method, message, time) VALUES (?, ?, ?)",
+                       (data['method'], data['message'], data['time']))
         conn.commit()
     return jsonify({"status": "success"})
 
@@ -72,9 +92,9 @@ def add_notification():
 def get_notifications():
     with sqlite3.connect(db_file) as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT recipient, method, message, time FROM notifications")
+        cursor.execute("SELECT method, message, time FROM notifications")
         notifications = cursor.fetchall()
-    return jsonify([{ "recipient": n[0], "method": n[1], "message": n[2], "time": n[3] } for n in notifications])
+    return jsonify([{ "method": n[0], "message": n[1], "time": n[2] } for n in notifications])
 
 if __name__ == '__main__':
     threading.Thread(target=check_notifications, daemon=True).start()
