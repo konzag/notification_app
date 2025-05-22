@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notification System</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        h1, h2 {
+            text-align: center;
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        label, select, input, button {
+            display: block;
+            width: 100%;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        button {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #218838;
+        }
+        .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .checkbox-group label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+    </style>
+    <script>
+        const socket = io();
+        socket.on('new_notification', function(data) {
+            alert("New Notification: " + data.message);
+        });
+
+        function addNotification() {
+            const methods = [];
+            document.querySelectorAll("input[name='method']:checked").forEach((checkbox) => {
+                methods.push(checkbox.value);
+            });
+            const message = document.getElementById("message").value;
+            const time = document.getElementById("time").value;
+            const selectedRecipients = Array.from(document.getElementById("recipients").selectedOptions).map(option => option.value);
+            const days = Array.from(document.querySelectorAll("input[name='days']:checked")).map(option => option.value);
+
+            fetch("/add_notification", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ methods, message, time, recipients: selectedRecipients, days })
+            }).then(response => response.json()).then(data => {
+                if (data.status === "success") {
+                    alert("Notification added successfully!");
+                    loadNotifications();
+                }
+            });
+        }
+
+        function loadNotifications() {
+            fetch("/get_notifications")
+                .then(response => response.json())
+                .then(data => {
+                    const table = document.getElementById("notificationTable");
+                    table.innerHTML = "<tr><th>Methods</th><th>Message</th><th>Time</th><th>Recipients</th><th>Days</th></tr>";
+                    data.forEach(notif => {
+                        table.innerHTML += `<tr><td>${notif.methods.join(', ')}</td><td>${notif.message}</td><td>${notif.time}</td><td>${notif.recipients.join(', ')}</td><td>${notif.days.join(', ')}</td></tr>`;
+                    });
+                });
+        }
+
+        function loadRecipients() {
+            fetch("/get_recipients")
+                .then(response => response.json())
+                .then(data => {
+                    const select = document.getElementById("recipients");
+                    select.innerHTML = "";
+                    if (data.length === 0) {
+                        select.innerHTML = "<option disabled>No recipients available</option>";
+                    } else {
+                        data.forEach(recipient => {
+                            select.innerHTML += `<option value="${recipient}">${recipient}</option>`;
+                        });
+                    }
+                });
+        }
+    </script>
+</head>
+<body onload="loadNotifications(); loadRecipients();">
+    <div class="container">
+        <h1>Notification System</h1>
+        <form onsubmit="event.preventDefault(); addNotification();">
+            <label>Methods:</label>
+            <input type="checkbox" name="method" value="email"> Email
+            <input type="checkbox" name="method" value="notification"> Notification
+
+            <label>Message:</label>
+            <input type="text" id="message" required>
+
+            <label>Time:</label>
+            <input type="time" id="time" required>
+
+            <label>Recipients:</label>
+            <select id="recipients" multiple></select>
+
+            <label>Days:</label>
+            <div class="checkbox-group">
+                <label><input type="checkbox" name="days" value="Monday"> Monday</label>
+                <label><input type="checkbox" name="days" value="Tuesday"> Tuesday</label>
+                <label><input type="checkbox" name="days" value="Wednesday"> Wednesday</label>
+                <label><input type="checkbox" name="days" value="Thursday"> Thursday</label>
+                <label><input type="checkbox" name="days" value="Friday"> Friday</label>
+                <label><input type="checkbox" name="days" value="Saturday"> Saturday</label>
+                <label><input type="checkbox" name="days" value="Sunday"> Sunday</label>
+            </div>
+
+            <button type="submit">Add Notification</button>
+        </form>
+    </div>
+    <h2>Scheduled Notifications</h2>
+    <table id="notificationTable" border="1">
+        <tr><th>Methods</th><th>Message</th><th>Time</th><th>Recipients</th><th>Days</th></tr>
+    </table>
+</body>
+</html>
